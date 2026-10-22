@@ -36,7 +36,9 @@ jobs:
       - name: Verify inspector deb
         shell: bash
         run: |
-          find MemberShelfInspectorDeb/packages -name '*.deb' -print -exec dpkg-deb -I {} \;
+          deb=$(find MemberShelfInspectorDeb/packages -name '*.deb' -print -quit)
+          test -n "$deb"
+          ar -t "$deb" | grep -q '^control[.]tar'
 
       - name: Download verified source IPA
         env:
