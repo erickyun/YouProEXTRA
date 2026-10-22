@@ -30,12 +30,6 @@ static BOOL MSPHasText(NSString *s, NSString *q) {
     return [s isKindOfClass:[NSString class]] &&
         [s rangeOfString:q options:NSCaseInsensitiveSearch].location != NSNotFound;
 }
-static BOOL MSPRelevant(NSString *s) {
-    return MSPHasText(s, @"member_recognition_shelf") ||
-           MSPHasText(s, @"recognitionShelfRenderer") ||
-           MSPHasText(s, @"recognition_shelf") ||
-           MSPHasText(s, @"recognition-shelf");
-}
 static NSString *MSPToken(NSString *s) {
     if (MSPHasText(s, @"member_recognition_shelf")) return @"member_recognition_shelf";
     if (MSPHasText(s, @"recognitionShelfRenderer")) return @"recognitionShelfRenderer";
