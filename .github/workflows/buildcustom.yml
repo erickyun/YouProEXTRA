@@ -206,15 +206,20 @@ jobs:
       - name: Download and Validate IPA
         shell: bash
         run: |
-          # A truncated ZIP can still have MIME type application/zip.
-          # Validate the full archive rather than relying on 'file'.
           for attempt in 1 2 3; do
             echo "Downloading YouTube IPA (attempt ${attempt}/3)"
-            if curl --fail --location --silent --show-error --retry 2 --retry-all-errors \
-              --connect-timeout 30 --output youtube.ipa "${{ inputs.ipa_url }}"; then
-              if unzip -tqq youtube.ipa >/dev/null 2>&1; then
-                if unzip -Z1 youtube.ipa | grep -Eq '^Payload/[^/]+[.]app/Info[.]plist
-
+            if curl --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 30 --output youtube.ipa "${{ inputs.ipa_url }}"; then
+              if unzip -tqq youtube.ipa >/dev/null 2>&1 && unzip -Z1 youtube.ipa | grep -q 'Payload/YouTube.app/Info.plist'; then
+                echo 'YouTube IPA archive verified successfully.'
+                break
+              fi
+            fi
+            rm -f youtube.ipa
+            if [ "$attempt" -eq 3 ]; then
+              echo '::error::IPA URL returned an incomplete or invalid ZIP archive. Use a direct-download decrypted IPA link.'
+              exit 1
+            fi
+          done
       - name: Download and Validate Custom .deb
         run: |
           DEB_FILENAME=$(basename "${{ inputs.deb_url }}" | cut -d'?' -f1)
