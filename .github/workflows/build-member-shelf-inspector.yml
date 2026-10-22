@@ -1,0 +1,26 @@
+name: Build Member Shelf Inspector Deb
+on:
+  push:
+    branches: [hide-channel-members-deb]
+    paths:
+      - 'MemberShelfInspectorDeb/**'
+      - '.github/workflows/build-member-shelf-inspector.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+      - name: Build diagnostic .deb
+        working-directory: MemberShelfInspectorDeb
+        run: make package FINALPACKAGE=1
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: MemberShelfInspector-deb
+          path: MemberShelfInspectorDeb/packages/*.deb
+          if-no-files-found: error
