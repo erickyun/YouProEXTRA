@@ -1,0 +1,27 @@
+name: Build Hide Channel Members Deb
+on:
+  push:
+    branches: [hide-channel-members-deb]
+    paths:
+      - 'HideChannelMembersDeb/**'
+      - '.github/workflows/build-hide-channel-members.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+      - name: Build deb
+        working-directory: HideChannelMembersDeb
+        run: make package FINALPACKAGE=1
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: HideChannelMembers-deb
+          path: HideChannelMembersDeb/packages/*.deb
+          if-no-files-found: error
