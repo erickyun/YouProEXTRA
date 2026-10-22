@@ -1,0 +1,75 @@
+name: Build YouTube Member Shelf Inspector IPA
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: 'Direct download URL of your clean decrypted YouTube IPA'
+        required: true
+        type: string
+      bundle_id:
+        description: 'The bundle ID to use for the diagnostic app'
+        default: 'com.google.ios.youtubezz'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspector:
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_ENV_HINTS: '1'
+    steps:
+      - name: Checkout dedicated inspector sources
+        uses: actions/checkout@v4
+        with:
+          ref: hide-channel-members-deb
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build inspector package (no hide tweak)
+        working-directory: MemberShelfInspectorDeb
+        run: make package FINALPACKAGE=1
+
+      - name: Verify inspector deb
+        shell: bash
+        run: |
+          find MemberShelfInspectorDeb/packages -name '*.deb' -print -exec dpkg-deb -I {} \;
+
+      - name: Download verified source IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+        shell: bash
+        run: |
+          echo "::add-mask::$IPA_URL"
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 -o youtube.ipa "$IPA_URL"
+          unzip -tqq youtube.ipa
+          unzip -Z1 youtube.ipa | grep -q 'Payload/YouTube.app/Info.plist'
+
+      - name: Install cyan
+        run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Inject inspector alone
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+        shell: bash
+        run: |
+          deb=$(find MemberShelfInspectorDeb/packages -name '*.deb' -print -quit)
+          test -n "$deb"
+          cyan -i youtube.ipa -o YouTube_MemberShelfInspector.ipa -uwesf "$deb" -n "YouTube Inspector" -b "$BUNDLE_ID"
+          unzip -tqq YouTube_MemberShelfInspector.ipa
+
+      - name: Upload inspector IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTube_MemberShelfInspector
+          path: YouTube_MemberShelfInspector.ipa
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Instructions
+        run: |
+          echo "### Inspect @gamerig → Home → Our Members" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install the artifact IPA with ESign, open the channel, keep Our Members visible, and tap Inspect at the top-right. Paste the copied report into ChatGPT." >> "$GITHUB_STEP_SUMMARY"
