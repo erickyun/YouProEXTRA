@@ -51,7 +51,7 @@ static BOOL CMIsMemberShelf(id item) {
 
 %hook YTIElementRenderer
 - (NSData *)elementData {
-    NSString *d = [[self description] lowercaseString];
+    NSString *d = [[(id)self description] lowercaseString];
     if ([d containsString:@"recognition_shelf"] ||
         [d containsString:@"recognition-shelf"] ||
         [d containsString:@"member_recognition_shelf"])
