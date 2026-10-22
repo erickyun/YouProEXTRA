@@ -78,11 +78,11 @@ static NSArray *HCMFilterSections(NSArray *sections) {
 }
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
     @try {
-        id sections = [self valueForKey:@"_sectionRenderers"];
+        id sections = [(id)self valueForKey:@"_sectionRenderers"];
         if ([sections isKindOfClass:[NSArray class]]) {
             NSArray *kept = HCMFilterSections(sections);
             if (kept.count != [(NSArray *)sections count]) {
-                [self setValue:[kept mutableCopy] forKey:@"_sectionRenderers"];
+                [(id)self setValue:[kept mutableCopy] forKey:@"_sectionRenderers"];
             }
         }
     } @catch (NSException *e) {
