@@ -59,7 +59,7 @@ static NSArray *HCMFilterSections(NSArray *sections) {
                 removeSection = (items.count == 0);
             }
         }
-        if (!removeSection && HCMMatched(section)) removeSection = YES;
+        if (!removeSection && !items && HCMMatched(section)) removeSection = YES;
         if (!removeSection) [kept addObject:section];
         else NSLog(@"[HideChannelMembers] Removed recognition shelf section");
     }
@@ -68,12 +68,13 @@ static NSArray *HCMFilterSections(NSArray *sections) {
 
 %hook YTInnerTubeCollectionViewController
 - (void)addSectionsFromArray:(NSArray *)sections {
+    NSArray *filtered = sections;
     @try {
-        %orig(HCMFilterSections(sections));
+        filtered = HCMFilterSections(sections);
     } @catch (NSException *e) {
         NSLog(@"[HideChannelMembers] Section filter exception: %@", e.name);
-        %orig(sections);
     }
+    %orig(filtered);
 }
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
     @try {
