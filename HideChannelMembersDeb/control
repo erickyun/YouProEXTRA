@@ -1,8 +1,8 @@
 Package: com.custom.hidechannelmembers
 Name: Hide Channel Members
-Version: 0.1.0
+Version: 0.2.0
 Architecture: iphoneos-arm
-Description: Hide the channel member recognition shelf in YouTube iOS (experimental).
+Description: Experimental crash-mitigated recognition shelf filter for YouTube iOS.
 Maintainer: Custom Build
 Author: Custom Build
 Section: Tweaks
