@@ -1,0 +1,92 @@
+name: Inspect Turkish Member Card in Existing YouTubePlus
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-turkish-member-card.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspector:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout MemberShelfInspector 0.2.0
+        uses: actions/checkout@v4
+        with:
+          ref: c3eca3601ff2074a5bcbde20d345ab931ea457f2
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build Inspector .deb
+        working-directory: MemberShelfInspectorDeb
+        run: make package FINALPACKAGE=1
+
+      - name: Verify .deb
+        shell: bash
+        run: |
+          deb=$(find MemberShelfInspectorDeb/packages -name '*.deb' -print -quit)
+          test -n "$deb"
+          ar -t "$deb" | grep -q '^control[.]tar'
+          echo "INSPECTOR_DEB=$deb" >> "$GITHUB_ENV"
+
+      - name: Download existing YouTubePlus IPA
+        shell: bash
+        run: |
+          curl -fLSs --retry 3 --retry-all-errors --connect-timeout 30 \
+            -o source.ipa \
+            'https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa'
+          unzip -tqq source.ipa
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('source.ipa') as z:
+              assert 'Payload/YouTube.app/YouTube' in z.namelist()
+              assert 'Payload/YouTube.app/Frameworks/MemberShelfInspector.dylib' not in z.namelist()
+              assert 'Payload/YouTube.app/Frameworks/HideChannelMembers.dylib' not in z.namelist()
+          PY
+
+      - name: Install cyan
+        run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Inject Inspector into existing YouTubePlus IPA
+        run: |
+          cyan -i source.ipa -o YouTubePlus_MemberShelfInspector_0.2.0.ipa -f "$INSPECTOR_DEB"
+          unzip -tqq YouTubePlus_MemberShelfInspector_0.2.0.ipa
+
+      - name: Verify existing frameworks are preserved
+        run: |
+          python3 - <<'PY'
+          import zipfile,struct
+          p='Payload/YouTube.app/'
+          with zipfile.ZipFile('source.ipa') as before,zipfile.ZipFile('YouTubePlus_MemberShelfInspector_0.2.0.ipa') as after:
+              a=set(before.namelist()); b=set(after.namelist())
+              libs={x for x in a if x.startswith(p+'Frameworks/') and (x.endswith('.dylib') or '.framework/' in x)}
+              missing=libs-b
+              assert not missing, f'Original frameworks missing: {sorted(missing)[:10]}'
+              assert p+'Frameworks/MemberShelfInspector.dylib' in b
+              data=after.read(p+'YouTube')
+              assert data[:4]==b'\xcf\xfa\xed\xfe'
+              sizeofcmds=struct.unpack_from('<I',data,20)[0]
+              assert 32+sizeofcmds <= 0x4000, 'Mach-O header may overlap code'
+              print('All pre-existing frameworks preserved:',len(libs))
+              print('Mach-O load commands end:',hex(32+sizeofcmds))
+          PY
+
+      - name: Upload Inspector IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTubePlus-Turkish-Member-Inspector-0.2.0
+          path: YouTubePlus_MemberShelfInspector_0.2.0.ipa
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Instructions
+        run: |
+          echo '### Turkish member card diagnostic IPA' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Install IPA with ESign. Set YouTube language to Turkish, open video Description and keep "Kanal üyelerine teşekkürler!" visible; tap Inspect and paste report into chat.' >> "$GITHUB_STEP_SUMMARY"
