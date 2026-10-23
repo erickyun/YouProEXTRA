@@ -9,13 +9,14 @@ on:
         required: true
         default: "https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa"
       version:
-        description: "HideChannelMembers version (0.4.0 tested; 0.5.0 experimental description removal)"
+        description: "0.4.0 tested channel Home, 0.5.0 English Description, 0.6.0 English/Turkish"
         type: choice
         required: true
-        default: "0.4.0"
+        default: "0.6.0"
         options:
-          - "0.4.0"
+          - "0.6.0"
           - "0.5.0"
+          - "0.4.0"
   push:
     branches: [main]
     paths: ['.github/workflows/inject-hidechannelmembers-existing-ipa.yml']
@@ -35,7 +36,10 @@ jobs:
           USER_VERSION: ${{ inputs.version }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "$EVENT_NAME" == 'workflow_dispatch' && "$USER_VERSION" == '0.5.0' ]]; then
+          if [[ "$EVENT_NAME" == 'push' || "$USER_VERSION" == '0.6.0' ]]; then
+            echo 'HCM_VERSION=0.6.0' >> "$GITHUB_ENV"
+            echo 'HCM_REF=dc6ee88c54da8f0246f16513bd789b65220d184d' >> "$GITHUB_ENV"
+          elif [[ "$USER_VERSION" == '0.5.0' ]]; then
             echo 'HCM_VERSION=0.5.0' >> "$GITHUB_ENV"
             echo 'HCM_REF=ca70272974b996368ced46392e93e77948f2669c' >> "$GITHUB_ENV"
           else
