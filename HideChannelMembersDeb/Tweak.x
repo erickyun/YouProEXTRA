@@ -59,6 +59,10 @@ static BOOL HCMIsDirectDescriptionMembersSection(id section) {
     NSString *className = NSStringFromClass([section class]);
     if (![className isEqualToString:@"YTIItemSectionRenderer"] &&
         ![className isEqualToString:@"YTIShelfRenderer"]) return NO;
+    // Never discard a multi-item section: it might also contain Video details,
+    // Transcript, or other legitimate content.
+    id children = HCMCall(section, @"contentsArray");
+    if ([children isKindOfClass:[NSArray class]] && [children count] > 1) return NO;
     @try {
         return HCMIsDescriptionMembersCardText([section description]);
     } @catch (NSException *exception) { return NO; }
