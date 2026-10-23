@@ -1,8 +1,8 @@
 Package: com.custom.membershelfinspector
 Name: Member Shelf Inspector
-Version: 0.1.0
+Version: 0.2.0
 Architecture: iphoneos-arm
-Description: Local-only diagnostic to identify channel members shelf rendering classes and markers.
+Description: Local-only inspector for English/Turkish member shelf view hierarchy.
 Maintainer: Debug Build
 Author: Debug Build
 Section: Tweaks
