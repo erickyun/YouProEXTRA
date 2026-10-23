@@ -100,12 +100,22 @@ static NSString *MSPLabelForView(UIView *v) {
         return ((UILabel *)v).text;
     if ([v isKindOfClass:[UITextView class]] && ((UITextView *)v).text.length)
         return ((UITextView *)v).text;
-    id text = MSPCall(v, @"text");
-    if ([text isKindOfClass:[NSString class]] && [text length]) return text;
-    id attributed = MSPCall(v, @"attributedText");
-    if ([attributed isKindOfClass:[NSAttributedString class]]) {
-        NSString *s=[(NSAttributedString *)attributed string];
-        if (s.length) return s;
+    // Some UIView subclasses implement -text with a scalar return type.
+    // Inspect Objective-C method signatures before sending object-returning calls.
+    SEL textSel=NSSelectorFromString(@"text");
+    NSMethodSignature *sig=[v methodSignatureForSelector:textSel];
+    if (sig && sig.methodReturnType && sig.methodReturnType[0]=='@') {
+        id value=MSPCall(v, @"text");
+        if ([value isKindOfClass:[NSString class]] && [value length]) return value;
+    }
+    SEL attSel=NSSelectorFromString(@"attributedText");
+    sig=[v methodSignatureForSelector:attSel];
+    if (sig && sig.methodReturnType && sig.methodReturnType[0]=='@') {
+        id value=MSPCall(v, @"attributedText");
+        if ([value isKindOfClass:[NSAttributedString class]]) {
+            NSString *text=[(NSAttributedString *)value string];
+            if (text.length) return text;
+        }
     }
     return v.accessibilityLabel;
 }
