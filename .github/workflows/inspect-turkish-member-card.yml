@@ -1,4 +1,4 @@
-name: Inspect Turkish Member Card in Existing YouTubePlus
+name: Tap-to-Inspect Turkish Member Card in YouTubePlus
 
 on:
   push:
@@ -15,10 +15,10 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - name: Checkout MemberShelfInspector 0.2.0
+      - name: Checkout MemberShelfInspector 0.3.0
         uses: actions/checkout@v4
         with:
-          ref: c3eca3601ff2074a5bcbde20d345ab931ea457f2
+          ref: ef44019a18f7ff44eb15b5fff0ac9234346c3bd7
 
       - name: Install Theos
         uses: Randomblock1/theos-action@v1
@@ -55,15 +55,15 @@ jobs:
 
       - name: Inject Inspector into existing YouTubePlus IPA
         run: |
-          cyan -i source.ipa -o YouTubePlus_MemberShelfInspector_0.2.0.ipa -f "$INSPECTOR_DEB"
-          unzip -tqq YouTubePlus_MemberShelfInspector_0.2.0.ipa
+          cyan -i source.ipa -o YouTubePlus_MemberShelfInspector_0.3.0.ipa -f "$INSPECTOR_DEB"
+          unzip -tqq YouTubePlus_MemberShelfInspector_0.3.0.ipa
 
       - name: Verify existing frameworks are preserved
         run: |
           python3 - <<'PY'
           import zipfile,struct
           p='Payload/YouTube.app/'
-          with zipfile.ZipFile('source.ipa') as before,zipfile.ZipFile('YouTubePlus_MemberShelfInspector_0.2.0.ipa') as after:
+          with zipfile.ZipFile('source.ipa') as before,zipfile.ZipFile('YouTubePlus_MemberShelfInspector_0.3.0.ipa') as after:
               a=set(before.namelist()); b=set(after.namelist())
               libs={x for x in a if x.startswith(p+'Frameworks/') and (x.endswith('.dylib') or '.framework/' in x)}
               missing=libs-b
@@ -80,8 +80,8 @@ jobs:
       - name: Upload Inspector IPA
         uses: actions/upload-artifact@v4
         with:
-          name: YouTubePlus-Turkish-Member-Inspector-0.2.0
-          path: YouTubePlus_MemberShelfInspector_0.2.0.ipa
+          name: YouTubePlus-Turkish-Member-Inspector-0.3.0
+          path: YouTubePlus_MemberShelfInspector_0.3.0.ipa
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
@@ -89,4 +89,4 @@ jobs:
       - name: Instructions
         run: |
           echo '### Turkish member card diagnostic IPA' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Install IPA with ESign. Set YouTube language to Turkish, open video Description and keep "Kanal üyelerine teşekkürler!" visible; tap Inspect and paste report into chat.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Install IPA with ESign. Set YouTube language to Turkish, open video Description and keep "Kanal üyelerine teşekkürler!" visible; tap Inspect, then tap the text itself, and paste report into chat.' >> "$GITHUB_STEP_SUMMARY"
