@@ -308,3 +308,14 @@ static id HCMFindCardNodeInsideView(UIView *view, NSUInteger *visited) {
     }
 }
 %end
+
+
+// Texture reuses UICollectionViewCell wrappers; do not carry hidden state to another item.
+%hook _ASCollectionViewCell
+- (void)prepareForReuse {
+    %orig;
+    objc_setAssociatedObject((id)self,&kHCMHiddenMemberCell,nil,
+                             OBJC_ASSOCIATION_ASSIGN);
+    ((UICollectionViewCell *)self).hidden=NO;
+}
+%end
