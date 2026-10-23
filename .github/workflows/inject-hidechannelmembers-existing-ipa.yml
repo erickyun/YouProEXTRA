@@ -9,11 +9,12 @@ on:
         required: true
         default: "https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa"
       version:
-        description: "0.4.0 tested channel Home, 0.5.0 English Description, 0.6.0 English/Turkish"
+        description: "0.7.0 Texture localized card test; 0.6.0 previous; 0.4.0 tested Home"
         type: choice
         required: true
-        default: "0.6.0"
+        default: "0.7.0"
         options:
+          - "0.7.0"
           - "0.6.0"
           - "0.5.0"
           - "0.4.0"
@@ -36,7 +37,10 @@ jobs:
           USER_VERSION: ${{ inputs.version }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "$EVENT_NAME" == 'push' || "$USER_VERSION" == '0.6.0' ]]; then
+          if [[ "$EVENT_NAME" == 'push' || "$USER_VERSION" == '0.7.0' ]]; then
+            echo 'HCM_VERSION=0.7.0' >> "$GITHUB_ENV"
+            echo 'HCM_REF=d113316a2e4ebd9be5e41a9cf08c70633c69b396' >> "$GITHUB_ENV"
+          elif [[ "$USER_VERSION" == '0.6.0' ]]; then
             echo 'HCM_VERSION=0.6.0' >> "$GITHUB_ENV"
             echo 'HCM_REF=dc6ee88c54da8f0246f16513bd789b65220d184d' >> "$GITHUB_ENV"
           elif [[ "$USER_VERSION" == '0.5.0' ]]; then
