@@ -83,27 +83,60 @@ static void MSPLogModel(id model, NSString *source) {
         }
     } @catch(NSException *e) {}
 }
+// Exact user-reported localization; diagnostics never hide or modify views.
 static BOOL MSPMatchesLabel(NSString *s) {
-    return MSPHasText(s, @"our members") ||
-           MSPHasText(s, @"üyelerimiz") ||
-           MSPHasText(s, @"channel members") ||
-           MSPHasText(s, @"kanal üyeleri");
+    if (![s isKindOfClass:[NSString class]]) return NO;
+    NSStringCompareOptions opts=NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch;
+    for (NSString *needle in @[@"Kanal üyelerine teşekkürler",
+                               @"Kanal üyelerimize teşekkürler",
+                               @"Thank you, channel members",
+                               @"Our members", @"Üyelerimiz"]) {
+        if ([s rangeOfString:needle options:opts].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+static NSString *MSPLabelForView(UIView *v) {
+    if ([v isKindOfClass:[UILabel class]] && ((UILabel *)v).text.length)
+        return ((UILabel *)v).text;
+    if ([v isKindOfClass:[UITextView class]] && ((UITextView *)v).text.length)
+        return ((UITextView *)v).text;
+    id text = MSPCall(v, @"text");
+    if ([text isKindOfClass:[NSString class]] && [text length]) return text;
+    id attributed = MSPCall(v, @"attributedText");
+    if ([attributed isKindOfClass:[NSAttributedString class]]) {
+        NSString *s=[(NSAttributedString *)attributed string];
+        if (s.length) return s;
+    }
+    return v.accessibilityLabel;
 }
 static void MSPScanViews(UIView *v, NSMutableArray<NSString *> *hits,
                          NSUInteger *visited, NSUInteger depth) {
-    if (!v || *visited>=14000 || depth>50 || hits.count>=30) return;
+    if (!v || *visited>=14000 || depth>60 || hits.count>=30) return;
     (*visited)++;
-    NSString *label = nil;
-    if ([v isKindOfClass:[UILabel class]]) label=((UILabel *)v).text;
-    if (!label) label=v.accessibilityLabel;
+    NSString *label = MSPLabelForView(v);
     if (MSPMatchesLabel(label)) {
         NSMutableArray<NSString *> *path=[NSMutableArray array];
         UIView *ancestor=v;
-        for (NSUInteger i=0; ancestor && i<12; i++,ancestor=ancestor.superview) {
-            [path addObject:MSPClass(ancestor)];
+        for (NSUInteger i=0; ancestor && i<16; i++,ancestor=ancestor.superview) {
+            NSString *siblings = [NSString stringWithFormat:@"%lu",
+                                   (unsigned long)ancestor.superview.subviews.count];
+            [path addObject:[NSString stringWithFormat:@"%@(%@ siblings) %@",
+                MSPClass(ancestor), siblings,
+                [ancestor isKindOfClass:[UICollectionViewCell class]] ? @"[COLLECTION CELL]" : @""]];
         }
-        [hits addObject:[NSString stringWithFormat:@"MATCH (%@): %@",
-            MSPHasText(label, @"üyeler") ? @"Turkish" : @"English", [path componentsJoinedByString:@" > "]]];
+        NSMutableArray<NSString *> *nearby=[NSMutableArray array];
+        UIView *parent=v.superview;
+        if (parent) {
+            for (UIView *sibling in [parent.subviews subarrayWithRange:
+                 NSMakeRange(0, MIN(parent.subviews.count,10))]) {
+                [nearby addObject:MSPClass(sibling)];
+            }
+        }
+        [hits addObject:[NSString stringWithFormat:
+            @"MATCH label=%@\nPATH bottom-up: %@\nIMMEDIATE SIBLINGS: %@",
+            MSPHasText(label, @"teşekkür") ? @"Kanal uyelerine tesekkurler" : @"English member heading",
+            [path componentsJoinedByString:@" > "],
+            [nearby componentsJoinedByString:@", "]]];
     }
     for (UIView *child in v.subviews) MSPScanViews(child,hits,visited,depth+1);
 }
@@ -123,13 +156,13 @@ static void MSPScanViews(UIView *v, NSMutableArray<NSString *> *hits,
     NSUInteger visited=0;
     MSPScanViews(w,hits,&visited,0);
     NSMutableString *r=[NSMutableString stringWithFormat:
-      @"MemberShelfInspector 0.1.0\nYouTube 21.42.4 test\nUIView count: %lu\n",
+      @"MemberShelfInspector 0.2.0\nYouTube 21.42.4 test\nUIView count: %lu\n",
       (unsigned long)visited];
     UIViewController *top=w.rootViewController;
     [r appendFormat:@"Root VC: %@\n", MSPClass(top)];
-    [r appendString:@"\nVisible 'Our Members' view paths:\n"];
+    [r appendString:@"\nVisible member shelf / Turkish member thanks view paths:\n"];
     if (hits.count) [r appendString:[hits componentsJoinedByString:@"\n"]];
-    else [r appendString:@"NO MATCH: scroll until the Our Members title is visible, then scan again."];
+    else [r appendString:@"NO MATCH: keep 'Kanal üyelerine teşekkürler!' visible, then inspect again."];
     [r appendString:@"\n\nRecent section/renderer observations:\n"];
     NSArray *entries=MSPHistory();
     NSUInteger from=(entries.count>55)?entries.count-55:0;
