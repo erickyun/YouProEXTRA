@@ -226,9 +226,8 @@ static void MSPViewsAtPoint(UIView *v, UIWindow *w, CGPoint point,
     floatButton.hidden=wasHidden;
 
     NSMutableString *report=[NSMutableString stringWithFormat:
-      @"MemberShelfInspector 0.3.0 (tap-picker)\n"
-       "YouTube 21.42.4\nPicked point: x=%.0f y=%.0f\n"
-       "hitTest UIView: %@\n\n",p.x,p.y,MSPClass(hit)];
+      @"MemberShelfInspector 0.3.0 (tap-picker)\nYouTube 21.42.4\nPicked point: x=%.0f y=%.0f\nhitTest UIView: %@\n\n",
+      p.x,p.y,MSPClass(hit)];
     [report appendString:@"Hit UIView ancestry (inner to outer):\n"];
     UIView *a=hit;
     for(NSUInteger level=0;a && level<19;level++,a=a.superview) {
