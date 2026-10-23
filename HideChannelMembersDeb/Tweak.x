@@ -1,4 +1,4 @@
-// HideChannelMembers 0.5.0 (experimental: video description recognition card)
+// HideChannelMembers 0.6.0 (TR/EN video description card support)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -30,10 +30,28 @@ static BOOL HCMIsDescriptionMembersCardText(NSString *text) {
             @"channel_member_recognition"
         ];
     });
+    NSStringCompareOptions matchOptions = NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch;
     for (NSString *needle in needles) {
-        if ([text rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound)
+        if ([text rangeOfString:needle options:matchOptions].location != NSNotFound)
             return YES;
     }
+
+    // Turkish: "Kanal üyelerimize teşekkürler!", "Kanal üyelerine teşekkürler",
+    // "Teşekkürler, kanal üyeleri!" and other wording/order variants.
+    // Require both a member term AND gratitude; never match generic "Katıl".
+    BOOL hasThanks =
+        [text rangeOfString:@"teşekkür" options:matchOptions].location != NSNotFound ||
+        [text rangeOfString:@"tesekkur" options:matchOptions].location != NSNotFound ||
+        [text rangeOfString:@"sağ ol" options:matchOptions].location != NSNotFound;
+    BOOL hasMember =
+        [text rangeOfString:@"üye" options:matchOptions].location != NSNotFound ||
+        [text rangeOfString:@"uye" options:matchOptions].location != NSNotFound;
+    BOOL channelContext =
+        [text rangeOfString:@"kanal" options:matchOptions].location != NSNotFound ||
+        [text rangeOfString:@"üyelerimiz" options:matchOptions].location != NSNotFound ||
+        [text rangeOfString:@"üyelerin" options:matchOptions].location != NSNotFound;
+    if (hasThanks && hasMember && channelContext) return YES;
+
     return NO;
 }
 
