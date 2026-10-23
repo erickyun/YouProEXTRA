@@ -1,4 +1,4 @@
-// HideChannelMembers 0.7.0 (localized AsyncDisplayKit member-card detection)
+// HideChannelMembers 0.8.0 (language-independent recognition card structure)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -171,151 +171,109 @@ static NSArray *HCMFilteredSections(NSArray *sections) {
 %end
 
 
-// Video Description is rendered by Texture/AsyncDisplayKit, not UILabel.
-// Localized text is supplied to ASTextNode after protobuf parsing.
-// The 0.4.0 channel Home section filter above is intentionally unchanged.
-static char kHCMIdentifiedMemberNode;
-static char kHCMHiddenMemberCell;
+// Video Description uses Texture / AsyncDisplayKit. The target card's
+// visual shape is stable across translations even when its heading is
+// rendered into an asynchronous layer rather than UILabel.
+// Based on tap-inspector output:
+// YTEngagementPanelView -> YTAsyncCollectionView -> _ASCollectionViewCell
+// with a lower, inset _ASDisplayView member card next to ASScrollView.
+static char kHCMCardViewMarker;
 
-static BOOL HCMIsLocalizedThanks(NSString *text) {
-    if (![text isKindOfClass:[NSString class]]) return NO;
-    NSStringCompareOptions opts = NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch;
-    for (NSString *phrase in @[
-        @"Kanal üyelerine teşekkürler",
-        @"Kanal üyelerimize teşekkürler",
-        @"Thank you, channel members"
-    ]) {
-        if ([text rangeOfString:phrase options:opts].location != NSNotFound)
-            return YES;
-    }
-    return NO;
-}
-static BOOL HCMIsTextureTextNode(id node) {
-    Class textNode=NSClassFromString(@"ASTextNode");
-    if (textNode && [node isKindOfClass:textNode]) return YES;
-    NSString *cls=NSStringFromClass([node class]);
-    return [cls hasSuffix:@"TextNode"] || [cls hasSuffix:@"TextNode2"];
-}
-static BOOL HCMNodeContainsMembersTitle(id node, NSUInteger depth, NSUInteger *visited) {
-    if (!node || depth>22 || *visited>350) return NO;
-    (*visited)++;
-    if (HCMIsTextureTextNode(node)) {
-        @try {
-            id attributed=HCMCall(node, @"attributedText");
-            if ([attributed isKindOfClass:[NSAttributedString class]] &&
-                HCMIsLocalizedThanks([(NSAttributedString *)attributed string])) return YES;
-            id text=HCMCall(node, @"text");
-            if ([text isKindOfClass:[NSString class]] &&
-                HCMIsLocalizedThanks(text)) return YES;
-        } @catch (NSException *exception) {}
-    }
-    @try {
-        id children=HCMCall(node, @"subnodes");
-        if ([children isKindOfClass:[NSArray class]]) {
-            for (id sub in children) {
-                if (HCMNodeContainsMembersTitle(sub,depth+1,visited)) return YES;
-            }
-        }
-    } @catch (NSException *exception) {}
-    return NO;
-}
-static BOOL HCMIsEngagementPanel(UIView *view) {
-    for (UIView *parent=view; parent; parent=parent.superview) {
+static BOOL HCMIsDescriptionPanelCollection(UIView *collection) {
+    for (UIView *parent=collection; parent; parent=parent.superview) {
         if ([NSStringFromClass([parent class]) isEqualToString:@"YTEngagementPanelView"])
             return YES;
     }
     return NO;
 }
-static BOOL HCMMarkedOrIdentified(id node) {
-    if (!node) return NO;
-    if (objc_getAssociatedObject(node,&kHCMIdentifiedMemberNode)) return YES;
-    NSUInteger count=0;
-    if (HCMNodeContainsMembersTitle(node,0,&count)) {
-        objc_setAssociatedObject(node,&kHCMIdentifiedMemberNode,@YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        return YES;
-    }
-    return NO;
+static BOOL HCMIsDisplayView(UIView *view) {
+    return [NSStringFromClass([view class]) isEqualToString:@"_ASDisplayView"];
 }
-static id HCMCellNodeAncestor(id node) {
-    Class cellNodeClass=NSClassFromString(@"ASCellNode");
-    for(NSUInteger i=0;node && i<24;i++) {
-        if (cellNodeClass && [node isKindOfClass:cellNodeClass])
-            return node;
-        node=HCMCall(node,@"supernode");
+static BOOL HCMHasAvatarCarouselSibling(UIView *card) {
+    UIView *parent=card.superview;
+    if (!parent || !HCMIsDisplayView(parent)) return NO;
+    NSUInteger displayCount=0;
+    NSUInteger scrollCount=0;
+    for (UIView *child in parent.subviews) {
+        NSString *name=NSStringFromClass([child class]);
+        if ([name isEqualToString:@"ASScrollView"]) scrollCount++;
+        if ([name isEqualToString:@"_ASDisplayView"]) displayCount++;
     }
-    return nil;
+    return scrollCount>=1 && displayCount>=2 && parent.subviews.count<=6;
 }
-// The _ASDisplayView backing ASTextNode exposes -asyncdisplaykit_node.
-// Unlike UILabel, the text is available through ASTextNode.attributedText.
-static id HCMFindCardNodeInsideView(UIView *view, NSUInteger *visited) {
-    if (!view || *visited>450) return nil;
+
+static BOOL HCMIsMemberCardShape(UIView *view, UICollectionViewCell *cell) {
+    if (!HCMIsDisplayView(view)) return NO;
+    CGRect bounds=cell.contentView.bounds;
+    if (bounds.size.width<260 || bounds.size.height<160) return NO;
+    CGRect r=[view convertRect:view.bounds toView:cell.contentView];
+    if (r.size.height<52 || r.size.height>165) return NO;
+    if (r.size.width<bounds.size.width*0.78 ||
+        r.size.width>bounds.size.width*1.03) return NO;
+    if (r.origin.x<6 || r.origin.x>55) return NO;
+    if (r.origin.y<bounds.size.height*0.35) return NO;
+    if (CGRectGetMaxY(r)>bounds.size.height+6) return NO;
+    if ((bounds.size.height-CGRectGetMaxY(r))>45) return NO;
+
+    // The inspector reported a 406x88 card with two _ASDisplayView
+    // descendants and ASScrollView as a sibling inside the same cell.
+    if (!HCMHasAvatarCarouselSibling(view)) return NO;
+    NSUInteger displayChildren=0;
+    for (UIView *child in view.subviews) {
+        if (HCMIsDisplayView(child)) displayChildren++;
+    }
+    return displayChildren>=1;
+}
+static UIView *HCMFindCard(UIView *view, UICollectionViewCell *cell,
+                           NSUInteger depth, NSUInteger *visited) {
+    if (!view || depth>22 || *visited>300) return nil;
     (*visited)++;
-    if ([NSStringFromClass([view class]) isEqualToString:@"_ASDisplayView"]) {
-        id node=HCMCall(view,@"asyncdisplaykit_node");
-        if (node && HCMIsTextureTextNode(node)) {
-            @try {
-                id attributed=HCMCall(node,@"attributedText");
-                if ([attributed isKindOfClass:[NSAttributedString class]] &&
-                    HCMIsLocalizedThanks([(NSAttributedString *)attributed string]))
-                    return HCMCellNodeAncestor(node);
-            } @catch (NSException *exception) {}
-        }
+    // Check children first: select only the narrow, inset card—not the
+    // enclosing cell which also contains Videos/About.
+    for (UIView *child in view.subviews) {
+        UIView *found=HCMFindCard(child,cell,depth+1,visited);
+        if (found) return found;
     }
-    for(UIView *child in view.subviews) {
-        id cell=HCMFindCardNodeInsideView(child,visited);
-        if (cell) return cell;
-    }
+    if (HCMIsMemberCardShape(view,cell)) return view;
     return nil;
+}
+static void HCMRestoreCardViews(UIView *view, NSUInteger depth) {
+    if (!view || depth>24) return;
+    if (objc_getAssociatedObject(view,&kHCMCardViewMarker)) {
+        view.hidden=NO;
+        objc_setAssociatedObject(view,&kHCMCardViewMarker,nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    for(UIView *sub in view.subviews)
+        HCMRestoreCardViews(sub,depth+1);
 }
 
 %hook YTAsyncCollectionView
-// When the recognition cell node is identified, let Texture measure it at
-// effectively zero height so other Description sections can move up.
-- (CGSize)sizeForElement:(id)element {
-    CGSize original=%orig;
-    if (![NSThread isMainThread] || !HCMIsEngagementPanel((UIView *)self))
-        return original;
-    id node=HCMCall(element, @"node");
-    if (node && HCMMarkedOrIdentified(node))
-        return CGSizeMake(original.width,0.5);
-    return original;
-}
 - (void)layoutSubviews {
     %orig;
-    if (![NSThread isMainThread] || !HCMIsEngagementPanel((UIView *)self))
-        return;
-    BOOL shouldReflow=NO;
-    for (UICollectionViewCell *cell in [(UICollectionView *)self visibleCells]) {
-        if (objc_getAssociatedObject(cell,&kHCMHiddenMemberCell)) {
-            cell.hidden=YES;
-            continue;
-        }
+    if (![NSThread isMainThread] ||
+        !HCMIsDescriptionPanelCollection((UIView *)self)) return;
+    NSArray *cells=[[(UICollectionView *)self visibleCells] copy];
+    for (UICollectionViewCell *cell in cells) {
+        if (![NSStringFromClass([cell class])
+               isEqualToString:@"_ASCollectionViewCell"]) continue;
         NSUInteger visited=0;
-        id cellNode=HCMFindCardNodeInsideView(cell.contentView,&visited);
-        if (!cellNode) continue;
-        BOOL newlyIdentified=!objc_getAssociatedObject(cellNode,&kHCMIdentifiedMemberNode);
-        objc_setAssociatedObject(cellNode,&kHCMIdentifiedMemberNode,@YES,
+        UIView *card=HCMFindCard(cell.contentView,cell,0,&visited);
+        if (!card || objc_getAssociatedObject(card,&kHCMCardViewMarker))
+            continue;
+        // No language matching, no channel ID matching, and do not hide
+        // the enclosing collection cell: it contains unrelated sections.
+        card.hidden=YES;
+        objc_setAssociatedObject(card,&kHCMCardViewMarker,@YES,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(cell,&kHCMHiddenMemberCell,@YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        cell.hidden=YES;
-        if (newlyIdentified) shouldReflow=YES;
-        NSLog(@"[HideChannelMembers] collapsed localized Description member card");
-    }
-    if (shouldReflow) {
-        [[(UICollectionView *)self collectionViewLayout] invalidateLayout];
+        NSLog(@"[HideChannelMembers] hid language-independent member card view");
     }
 }
 %end
 
-
-// Texture reuses UICollectionViewCell wrappers; do not carry hidden state to another item.
 %hook _ASCollectionViewCell
 - (void)prepareForReuse {
     %orig;
-    objc_setAssociatedObject((id)self,&kHCMHiddenMemberCell,nil,
-                             OBJC_ASSOCIATION_ASSIGN);
-    ((UICollectionViewCell *)self).hidden=NO;
+    HCMRestoreCardViews(((UICollectionViewCell *)self).contentView,0);
 }
 %end
