@@ -5,5 +5,5 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = HideChannelMembers
 HideChannelMembers_FILES = Tweak.x
 HideChannelMembers_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-HideChannelMembers_FRAMEWORKS = Foundation
+HideChannelMembers_FRAMEWORKS = Foundation UIKit
 include $(THEOS_MAKE_PATH)/tweak.mk
