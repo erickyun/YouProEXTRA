@@ -150,9 +150,37 @@ static void MSPScanViews(UIView *v, NSMutableArray<NSString *> *hits,
     }
     for (UIView *child in v.subviews) MSPScanViews(child,hits,visited,depth+1);
 }
+
+static NSString *MSPViewSummary(UIView *v, UIWindow *w) {
+    if (!v) return @"(none)";
+    CGRect r=CGRectZero;
+    @try { r=[v convertRect:v.bounds toView:w]; } @catch(NSException *e) {}
+    NSString *label=MSPLabelForView(v);
+    NSString *flag = MSPMatchesLabel(label) ? @" [MEMBER LABEL]" : @"";
+    return [NSString stringWithFormat:@"%@ (x=%.0f y=%.0f w=%.0f h=%.0f)%@",
+        MSPClass(v),r.origin.x,r.origin.y,r.size.width,r.size.height,flag];
+}
+static void MSPViewsAtPoint(UIView *v, UIWindow *w, CGPoint point,
+                            NSMutableArray<NSString *> *result,
+                            NSUInteger depth, NSUInteger *visited) {
+    if (!v || depth>70 || *visited>15000 || v.hidden || v.alpha<0.01) return;
+    (*visited)++;
+    CGRect rect=CGRectZero;
+    @try {rect=[v convertRect:v.bounds toView:w];} @catch(NSException *e) {return;}
+    if (CGRectContainsPoint(CGRectInset(rect,-3,-3),point)) {
+        if (result.count<100) {
+            [result addObject:[NSString stringWithFormat:@"depth=%lu %@",
+                (unsigned long)depth, MSPViewSummary(v,w)]];
+        }
+    }
+    for(UIView *child in v.subviews) {
+        MSPViewsAtPoint(child,w,point,result,depth+1,visited);
+    }
+}
 @interface MSPShelfInspector : NSObject
 + (instancetype)shared;
 - (void)onTap:(UIButton *)sender;
+- (void)onPick:(UITapGestureRecognizer *)recognizer;
 @end
 @implementation MSPShelfInspector
 + (instancetype)shared {
@@ -161,34 +189,98 @@ static void MSPScanViews(UIView *v, NSMutableArray<NSString *> *hits,
 }
 - (void)onTap:(UIButton *)sender {
     UIWindow *w=[sender.superview isKindOfClass:[UIWindow class]]?(UIWindow *)sender.superview:nil;
+    if (!w || [w viewWithTag:781913]) return;
+    // Don't rely on UILabel or localized strings; select by physical touch.
+    UIView *cover=[[UIView alloc] initWithFrame:w.bounds];
+    cover.tag=781913;
+    cover.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+    cover.backgroundColor=[UIColor colorWithWhite:0 alpha:0.18];
+    UILabel *notice=[[UILabel alloc] initWithFrame:CGRectMake(12,w.safeAreaInsets.top+8,
+                                              MAX(120,w.bounds.size.width-24),76)];
+    notice.text=@"TAP THE MEMBER CARD HEADING\nKanal üyelerine teşekkürler!";
+    notice.numberOfLines=2;
+    notice.textAlignment=NSTextAlignmentCenter;
+    notice.font=[UIFont boldSystemFontOfSize:15];
+    notice.textColor=[UIColor whiteColor];
+    notice.backgroundColor=[UIColor colorWithWhite:0.1 alpha:0.85];
+    notice.layer.cornerRadius=12;
+    notice.layer.masksToBounds=YES;
+    notice.userInteractionEnabled=NO;
+    [cover addSubview:notice];
+    UITapGestureRecognizer *pick=[[UITapGestureRecognizer alloc]
+                                   initWithTarget:self action:@selector(onPick:)];
+    [cover addGestureRecognizer:pick];
+    [w addSubview:cover];
+}
+- (void)onPick:(UITapGestureRecognizer *)recognizer {
+    UIView *cover=recognizer.view;
+    UIWindow *w=cover.window;
     if (!w) return;
-    NSMutableArray<NSString *> *hits=[NSMutableArray array];
-    NSUInteger visited=0;
-    MSPScanViews(w,hits,&visited,0);
-    NSMutableString *r=[NSMutableString stringWithFormat:
-      @"MemberShelfInspector 0.2.0\nYouTube 21.42.4 test\nUIView count: %lu\n",
-      (unsigned long)visited];
-    UIViewController *top=w.rootViewController;
-    [r appendFormat:@"Root VC: %@\n", MSPClass(top)];
-    [r appendString:@"\nVisible member shelf / Turkish member thanks view paths:\n"];
-    if (hits.count) [r appendString:[hits componentsJoinedByString:@"\n"]];
-    else [r appendString:@"NO MATCH: keep 'Kanal üyelerine teşekkürler!' visible, then inspect again."];
-    [r appendString:@"\n\nRecent section/renderer observations:\n"];
-    NSArray *entries=MSPHistory();
-    NSUInteger from=(entries.count>55)?entries.count-55:0;
-    for(NSUInteger i=from;i<entries.count;i++) {
-        [r appendFormat:@"%@\n",entries[i]];
+    CGPoint p=[recognizer locationInView:w];
+    [cover removeFromSuperview];
+    // Temporarily hide the floating button so hitTest targets the actual content.
+    UIView *floatButton=[w viewWithTag:781912];
+    BOOL wasHidden=floatButton.hidden;
+    floatButton.hidden=YES;
+    UIView *hit=[w hitTest:p withEvent:nil];
+    floatButton.hidden=wasHidden;
+
+    NSMutableString *report=[NSMutableString stringWithFormat:
+      @"MemberShelfInspector 0.3.0 (tap-picker)\n"
+       "YouTube 21.42.4\nPicked point: x=%.0f y=%.0f\n"
+       "hitTest UIView: %@\n\n",p.x,p.y,MSPClass(hit)];
+    [report appendString:@"Hit UIView ancestry (inner to outer):\n"];
+    UIView *a=hit;
+    for(NSUInteger level=0;a && level<19;level++,a=a.superview) {
+        [report appendFormat:@"%lu: %@\n",(unsigned long)level,MSPViewSummary(a,w)];
+        UIView *parent=a.superview;
+        if (parent) {
+            [report appendFormat:@" siblings: %lu",
+             (unsigned long)parent.subviews.count];
+            NSUInteger count=0;
+            for (UIView *sibling in parent.subviews) {
+                if(count++>=12)break;
+                [report appendFormat:@" | %@",MSPClass(sibling)];
+            }
+            [report appendString:@"\n"];
+        }
     }
-    [UIPasteboard generalPasteboard].string=r;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Inspector: Copied"
-      message:@"The view-class report is copied to clipboard. Paste it into ChatGPT. It only lists class names and member-shelf markers, not video titles."
-      preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+
+    NSMutableArray<NSString *> *pointViews=[NSMutableArray array];
+    NSUInteger visited=0;
+    MSPViewsAtPoint(w,w,p,pointViews,0,&visited);
+    [report appendFormat:@"\nViews overlapping selected point (%lu total visited):\n",
+        (unsigned long)visited];
+    NSUInteger from=pointViews.count>65?pointViews.count-65:0;
+    for(NSUInteger idx=from;idx<pointViews.count;idx++)
+        [report appendFormat:@"%@\n",pointViews[idx]];
+
+    NSMutableArray<NSString *> *namedHits=[NSMutableArray array];
+    visited=0;
+    MSPScanViews(w,namedHits,&visited,0);
+    [report appendString:@"\nText matcher results:\n"];
+    if(namedHits.count) [report appendString:[namedHits componentsJoinedByString:@"\n"]];
+    else [report appendString:@"No matching UILabel/accessibility text found."];
+    [report appendString:@"\n\nRecent renderer markers:\n"];
+    NSArray<NSString *> *entries=MSPHistory();
+    NSUInteger offset=entries.count>35?entries.count-35:0;
+    for(NSUInteger i=offset;i<entries.count;i++) {
+        if([entries[i] containsString:@"token="])
+            [report appendFormat:@"%@\n",entries[i]];
+    }
+    [UIPasteboard generalPasteboard].string=report;
+    UIAlertController *alert=[UIAlertController
+        alertControllerWithTitle:@"Class hierarchy copied"
+        message:@"Paste into ChatGPT. No video titles or member account names are included."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+          style:UIAlertActionStyleDefault handler:nil]];
     UIViewController *vc=w.rootViewController;
     while(vc.presentedViewController) vc=vc.presentedViewController;
-    if(vc) [vc presentViewController:a animated:YES completion:nil];
+    if(vc) [vc presentViewController:alert animated:YES completion:nil];
 }
 @end
+
 static void MSPInstallButton(void) {
     UIApplication *app=[UIApplication sharedApplication];
     UIWindow *window=app.keyWindow;
