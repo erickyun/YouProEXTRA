@@ -1,0 +1,159 @@
+name: Inject HideChannelMembers into Existing YouTubePlus IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Existing prebuilt YouTubePlus IPA direct-download link"
+        type: string
+        required: true
+        default: "https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa"
+      version:
+        description: "HideChannelMembers version (0.4.0 tested; 0.5.0 experimental description removal)"
+        type: choice
+        required: true
+        default: "0.4.0"
+        options:
+          - "0.4.0"
+          - "0.5.0"
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inject-hidechannelmembers-existing-ipa.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inject:
+    name: Inject ONLY HideChannelMembers into already-modded IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Select tested tweak source
+        shell: bash
+        env:
+          USER_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' && "$USER_VERSION" == '0.5.0' ]]; then
+            echo 'HCM_VERSION=0.5.0' >> "$GITHUB_ENV"
+            echo 'HCM_REF=ca70272974b996368ced46392e93e77948f2669c' >> "$GITHUB_ENV"
+          else
+            echo 'HCM_VERSION=0.4.0' >> "$GITHUB_ENV"
+            echo 'HCM_REF=397a2f84b795f1d683a9ab1022f803a41ca74d14' >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout pinned working tweak source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HCM_REF }}
+
+      - name: Download existing prebuilt IPA
+        shell: bash
+        env:
+          USER_IPA_URL: ${{ inputs.ipa_url }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            IPA_URL="$USER_IPA_URL"
+          else
+            IPA_URL='https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa'
+          fi
+          test -n "$IPA_URL"
+          echo "::add-mask::$IPA_URL"
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30 \
+            --output original.ipa "$IPA_URL"
+          unzip -tqq original.ipa
+          python3 - <<'PY'
+          import zipfile,sys
+          with zipfile.ZipFile('original.ipa') as z:
+              names=set(z.namelist())
+              exe='Payload/YouTube.app/YouTube'
+              assert exe in names, 'Source IPA missing YouTube main binary'
+              assert 'Payload/YouTube.app/Info.plist' in names, 'Source IPA missing Info.plist'
+              assert 'Payload/YouTube.app/Frameworks/HideChannelMembers.dylib' not in names, 'Custom tweak already exists in source'
+              libs=[x for x in names if x.startswith('Payload/YouTube.app/Frameworks/') and x.endswith('.dylib')]
+              print('Input IPA includes',len(libs),'pre-existing dylib files')
+          PY
+
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build exactly one custom .deb
+        working-directory: HideChannelMembersDeb
+        run: make package FINALPACKAGE=1
+
+      - name: Verify tweak package version
+        shell: bash
+        run: |
+          DEB=$(find HideChannelMembersDeb/packages -name '*.deb' -print -quit)
+          test -n "$DEB"
+          ar -t "$DEB" | grep -q '^control[.]tar'
+          echo "DEB_PATH=$DEB" >> "$GITHUB_ENV"
+
+      - name: Install cyan injector
+        run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Inject custom deb into prebuilt IPA without rebuilding existing tweaks
+        shell: bash
+        run: |
+          cyan -i original.ipa -o "YouTubePlus_21.42.4_HideChannelMembers_${HCM_VERSION}.ipa" -f "$DEB_PATH"
+          unzip -tqq "YouTubePlus_21.42.4_HideChannelMembers_${HCM_VERSION}.ipa"
+
+      - name: Validate existing tweak retention and Mach-O header safety
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile, struct, os
+          original='original.ipa'
+          output=f"YouTubePlus_21.42.4_HideChannelMembers_{os.environ['HCM_VERSION']}.ipa"
+          prefix='Payload/YouTube.app/'
+          with zipfile.ZipFile(original) as before, zipfile.ZipFile(output) as after:
+              old=set(before.namelist()); new=set(after.namelist())
+              oldlibs={x for x in old if x.startswith(prefix+'Frameworks/') and (x.endswith('.dylib') or '.framework/' in x)}
+              missing=oldlibs-new
+              assert not missing, f"Previous frameworks removed: {sorted(missing)[:15]}"
+              assert prefix+'Frameworks/HideChannelMembers.dylib' in new, "New tweak not embedded"
+              executable=prefix+'YouTube'
+              assert executable in new, "No main executable found"
+              data=after.read(executable)
+              if data[:4] != b'\xcf\xfa\xed\xfe':
+                  raise ValueError('Expected ARM64 Mach-O executable; got another format')
+              magic,cpu,subtype,filetype,ncmds,sizeofcmds,flags,reserved=struct.unpack_from('<IiiIIIII',data,0)
+              load_end=32+sizeofcmds
+              off=32; first_text=None
+              for i in range(ncmds):
+                  cmd,cmdsize=struct.unpack_from('<II',data,off)
+                  assert cmdsize>=8 and off+cmdsize<=load_end, 'Corrupted Mach-O load command structure'
+                  if cmd==0x19:
+                      nsects=struct.unpack_from('<I',data,off+64)[0]
+                      for j in range(nsects):
+                          s=off+72+j*80
+                          if s+80>off+cmdsize: raise ValueError('Bad segment section header')
+                          section_name=data[s:s+16].split(b'\0',1)[0]
+                          section_offset=struct.unpack_from('<I',data,s+48)[0]
+                          if section_name==b'__text':
+                              first_text=section_offset if first_text is None else min(first_text,section_offset)
+                  off+=cmdsize
+              assert off==load_end, 'Load-command range mismatch'
+              assert first_text and load_end<=first_text, f'Mach-O load commands overlap code: {load_end:#x} > {first_text:#x}'
+              print(f'Original framework files preserved: {len(oldlibs)}')
+              print(f'Mach-O header commands end: {load_end:#x}; __text begins: {first_text:#x}')
+          PY
+
+      - name: Upload ready-to-sign IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTubePlus-HideChannelMembers-${{ env.HCM_VERSION }}
+          path: YouTubePlus_21.42.4_HideChannelMembers_*.ipa
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Build summary
+        shell: bash
+        run: |
+          echo "### IPA ready for ESign" >> "$GITHUB_STEP_SUMMARY"
+          echo "Base: mrdrvt99 YouTubePlus 21.42.4 YTLite 6.0b2 (existing tweaks preserved)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Added only HideChannelMembers ${HCM_VERSION} .deb." >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the workflow artifact, unzip it, and sign/install the IPA with ESign." >> "$GITHUB_STEP_SUMMARY"
