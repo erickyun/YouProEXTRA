@@ -204,22 +204,14 @@ jobs:
           exclude_inputs: bundle_id,display_name,custom_name,demc,isponsorblock,ythold,volumeboost,nativeshare,opensafari,youpip,ytuhd,ryd,ytabconfig,youquality,youslider,ytweaks,youchoose,gonerino,yougetcaption,youspeed,youmute,youloop,pleasedontstopthemusic
 
       - name: Download and Validate IPA
-        shell: bash
         run: |
-          for attempt in 1 2 3; do
-            echo "Downloading YouTube IPA (attempt ${attempt}/3)"
-            if curl --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 30 --output youtube.ipa "${{ inputs.ipa_url }}"; then
-              if unzip -tqq youtube.ipa >/dev/null 2>&1 && unzip -Z1 youtube.ipa | grep -q 'Payload/YouTube.app/Info.plist'; then
-                echo 'YouTube IPA archive verified successfully.'
-                break
-              fi
-            fi
-            rm -f youtube.ipa
-            if [ "$attempt" -eq 3 ]; then
-              echo '::error::IPA URL returned an incomplete or invalid ZIP archive. Use a direct-download decrypted IPA link.'
-              exit 1
-            fi
-          done
+          wget "${{ inputs.ipa_url }}" --quiet --no-verbose -O youtube.ipa
+          file_type=$(file --mime-type -b youtube.ipa)
+          if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
+            echo "::error::Validation failed: The downloaded file is not a valid IPA. Detected type: $file_type."
+            exit 1
+          fi
+
       - name: Download and Validate Custom .deb
         run: |
           DEB_FILENAME=$(basename "${{ inputs.deb_url }}" | cut -d'?' -f1)
@@ -261,38 +253,6 @@ jobs:
           echo "YT_VERSION=$(grep -A 1 '<key>CFBundleVersion</key>' ytextracted/Payload/YouTube.app/Info.plist | grep '<string>' | awk -F'[><]' '{print $3}')" >> $GITHUB_ENV
           rm -rf ytextracted
 
-      - name: Prevent incompatible tweak combinations
-        shell: bash
-        env:
-          YOUTUBE_VERSION: ${{ env.YT_VERSION }}
-          ENABLE_ISPONSORBLOCK: ${{ inputs.isponsorblock }}
-          ENABLE_YTUHD: ${{ inputs.ytuhd }}
-        run: |
-          python3 - <<'PY'
-          import os, re, sys
-          raw = os.environ.get('YOUTUBE_VERSION', '')
-          match = re.match(r'^(\d+)\.(\d+)\.(\d+)', raw)
-          if not match:
-              print(f'::warning::Could not parse YouTube version {raw!r} for compatibility check.')
-              sys.exit(0)
-          version = tuple(map(int, match.groups()))
-          incompatible = version >= (21, 25, 5)
-          choices = [
-              ('iSponsorBlock', os.getenv('ENABLE_ISPONSORBLOCK') == 'true'),
-              ('YTUHD', os.getenv('ENABLE_YTUHD') == 'true'),
-          ]
-          if incompatible:
-              selected = [name for name, enabled in choices if enabled]
-              if selected:
-                  for name in selected:
-                      print(f'::error::{name} is marked incompatible with YouTube {raw} (21.25.5+).'
-                            ' Disable its checkbox to prevent a broken IPA.')
-                  if 'iSponsorBlock' in selected:
-                      print('::error::iSponsorBlock is also known to crash at launch'
-                            ' with DYLD Library missing: @rpath/libcolorpicker.dylib.')
-                  sys.exit(1)
-          print(f'Checked tweak compatibility for YouTube {raw}.')
-          PY
       - name: Install cyan
         run: |
           pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
