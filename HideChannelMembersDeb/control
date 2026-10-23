@@ -1,8 +1,8 @@
 Package: com.custom.hidechannelmembers
 Name: Hide Channel Members
-Version: 0.6.0
+Version: 0.7.0
 Architecture: iphoneos-arm
-Description: Hide channel Home member shelf and English/Turkish video description members card.
+Description: Hide channel member shelf and localized video Description member cards through Texture.
 Maintainer: Custom Build
 Author: Custom Build
 Section: Tweaks
