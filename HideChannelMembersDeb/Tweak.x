@@ -1,4 +1,4 @@
-// HideChannelMembers 0.10.0 (members, live chat, search suggestions)
+// HideChannelMembers 0.11.0 (members, live chat, search suggestions and zero-state list)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -333,7 +333,85 @@ static void HCMRestoreCardViews(UIView *view, NSUInteger depth) {
 
 // Hide zero-query recommendations, search history and autocomplete.
 // Based on YTLite's noSearchHistory hooks; preserve submitted search results.
+
+// Search suggestions and the initial empty-query/trending page can be
+// populated through different paths. Hide the suggestion presentation
+// itself as well as suppressing the ordinary suggestion payload.
+// Restrict this to the search-entry controller, never results controllers.
+static BOOL HCMIsSearchEntryController(id controller) {
+    if (!controller) return NO;
+    for (Class cls=[controller class]; cls; cls=class_getSuperclass(cls)) {
+        NSString *name=NSStringFromClass(cls);
+        if ([name isEqualToString:@"YTSearchViewController"] ||
+            [name isEqualToString:@"YTSearchSuggestionsViewController"] ||
+            [name isEqualToString:@"YTSearchSuggestionViewController"] ||
+            [name isEqualToString:@"YTZeroStateSearchViewController"] ||
+            [name isEqualToString:@"YTSearchZeroStateViewController"]) return YES;
+        if ([name rangeOfString:@"SearchResults" options:NSCaseInsensitiveSearch].location!=NSNotFound)
+            return NO;
+    }
+    return NO;
+}
+
+static UIViewController *HCMNearestController(UIView *view) {
+    for (UIResponder *r=view; r; r=r.nextResponder) {
+        if ([r isKindOfClass:[UIViewController class]]) return (UIViewController *)r;
+    }
+    return nil;
+}
+
+static void HCMHideSearchList(UIView *view) {
+    if (!view || view.hidden) return;
+    view.hidden=YES;
+    view.userInteractionEnabled=NO;
+    view.accessibilityElementsHidden=YES;
+}
+
+static void HCMHideSearchEntryLists(UIView *view, NSUInteger depth) {
+    if (!view || depth>30) return;
+    if ([view isKindOfClass:[UICollectionView class]] ||
+        [view isKindOfClass:[UITableView class]]) {
+        // Search result controllers are intentionally excluded, including
+        // any child controller embedded under the search-entry screen.
+        if (HCMIsSearchEntryController(HCMNearestController(view))) {
+            HCMHideSearchList(view);
+            return;
+        }
+    }
+    for (UIView *sub in view.subviews)
+        HCMHideSearchEntryLists(sub,depth+1);
+}
+
+static void HCMHideSearchEntrySuggestions(UIViewController *controller) {
+    if (![NSThread isMainThread] || !controller.isViewLoaded) return;
+    UIView *root=controller.view;
+    // Use the historically documented suggestions ivar if still present.
+    // Runtime checking makes this safe when newer builds remove the ivar.
+    for (NSString *key in @[@"_suggestionsView", @"_suggestionsCollectionView",
+                             @"_suggestionsTableView", @"_zeroStateSuggestionsView"]) {
+        Ivar ivar=class_getInstanceVariable([controller class],key.UTF8String);
+        if (!ivar) continue;
+        const char *type=ivar_getTypeEncoding(ivar);
+        if (!type || type[0]!='@') continue;
+        id candidate=object_getIvar(controller,ivar);
+        if ([candidate isKindOfClass:[UIScrollView class]] &&
+            [(UIView *)candidate isDescendantOfView:root] &&
+            HCMIsSearchEntryController(HCMNearestController(candidate))) {
+            HCMHideSearchList(candidate);
+        }
+    }
+    HCMHideSearchEntryLists(root,0);
+}
+
 %hook YTSearchViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    HCMHideSearchEntrySuggestions((UIViewController *)self);
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    HCMHideSearchEntrySuggestions((UIViewController *)self);
+}
 - (void)setSuggestions:(id)suggestions {
     // Suppress suggestion payload, independent of interface language.
 }
@@ -342,5 +420,17 @@ static void HCMRestoreCardViews(UIView *view, NSUInteger depth) {
 %hook YTPersonalizedSuggestionsCacheProvider
 - (id)activeCache {
     return nil;
+}
+%end
+
+
+// The older native cell is also used for trending/history suggestions.
+// A specific cell-class fallback avoids touching real video result cells.
+%hook YTSearchSuggestionCollectionViewCell
+- (void)layoutSubviews {
+    %orig;
+    if (HCMIsSearchEntryController(HCMNearestController((UIView *)self))) {
+        HCMHideSearchList((UIView *)self);
+    }
 }
 %end
