@@ -30,7 +30,7 @@ permissions:
 jobs:
   inject:
     name: Inject ONLY HideChannelMembers into already-modded IPA
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - name: Select tested tweak source
