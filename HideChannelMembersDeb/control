@@ -1,8 +1,8 @@
 Package: com.custom.hidechannelmembers
 Name: Hide Channel Members
-Version: 0.9.0
+Version: 0.10.0
 Architecture: iphoneos-arm
-Description: Hide member recognition shelves, description member cards, and live chat entry renderers.
+Description: Hide member recognition, live chat entry renderers, and search suggestions.
 Maintainer: Custom Build
 Author: Custom Build
 Section: Tweaks
