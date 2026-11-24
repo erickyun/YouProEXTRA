@@ -7,13 +7,14 @@ on:
         description: "Existing prebuilt YouTubePlus IPA direct-download link"
         type: string
         required: true
-        default: "https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa"
+        default: "https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa9/YouTubePlus_21.47.6_6.0.ipa"
       version:
-        description: "0.8.0 language-independent card test; 0.7.0 earlier; 0.4.0 tested Home"
+        description: "0.9.0 members + live chat; 0.8.0 previous members filter"
         type: choice
         required: true
-        default: "0.8.0"
+        default: "0.9.0"
         options:
+          - "0.9.0"
           - "0.8.0"
           - "0.7.0"
           - "0.6.0"
@@ -38,7 +39,10 @@ jobs:
           USER_VERSION: ${{ inputs.version }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "$EVENT_NAME" == 'push' || "$USER_VERSION" == '0.8.0' ]]; then
+          if [[ "$EVENT_NAME" == 'push' || "$USER_VERSION" == '0.9.0' ]]; then
+            echo 'HCM_VERSION=0.9.0' >> "$GITHUB_ENV"
+            echo 'HCM_REF=d97e635ff22a36817500c8482ea18669a838d58b' >> "$GITHUB_ENV"
+          elif [[ "$USER_VERSION" == '0.8.0' ]]; then
             echo 'HCM_VERSION=0.8.0' >> "$GITHUB_ENV"
             echo 'HCM_REF=88e4df360a253451cd553e42b5101ad44481dd63' >> "$GITHUB_ENV"
           elif [[ "$USER_VERSION" == '0.7.0' ]]; then
@@ -69,7 +73,7 @@ jobs:
           if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
             IPA_URL="$USER_IPA_URL"
           else
-            IPA_URL='https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa7/YouTubePlus_21.42.4_6.0b2.ipa'
+            IPA_URL='https://github.com/mrdrvt99/YouProEXTRA/releases/download/ytl-ipa9/YouTubePlus_21.47.6_6.0.ipa'
           fi
           test -n "$IPA_URL"
           echo "::add-mask::$IPA_URL"
@@ -109,8 +113,8 @@ jobs:
       - name: Inject custom deb into prebuilt IPA without rebuilding existing tweaks
         shell: bash
         run: |
-          cyan -i original.ipa -o "YouTubePlus_21.42.4_HideChannelMembers_${HCM_VERSION}.ipa" -f "$DEB_PATH"
-          unzip -tqq "YouTubePlus_21.42.4_HideChannelMembers_${HCM_VERSION}.ipa"
+          cyan -i original.ipa -o "YouTubePlus_21.47.6_HideChannelMembers_${HCM_VERSION}.ipa" -f "$DEB_PATH"
+          unzip -tqq "YouTubePlus_21.47.6_HideChannelMembers_${HCM_VERSION}.ipa"
 
       - name: Validate existing tweak retention and Mach-O header safety
         shell: bash
@@ -118,7 +122,7 @@ jobs:
           python3 - <<'PY'
           import zipfile, struct, os
           original='original.ipa'
-          output=f"YouTubePlus_21.42.4_HideChannelMembers_{os.environ['HCM_VERSION']}.ipa"
+          output=f"YouTubePlus_21.47.6_HideChannelMembers_{os.environ['HCM_VERSION']}.ipa"
           prefix='Payload/YouTube.app/'
           with zipfile.ZipFile(original) as before, zipfile.ZipFile(output) as after:
               old=set(before.namelist()); new=set(after.namelist())
@@ -157,7 +161,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: YouTubePlus-HideChannelMembers-${{ env.HCM_VERSION }}
-          path: YouTubePlus_21.42.4_HideChannelMembers_*.ipa
+          path: YouTubePlus_21.47.6_HideChannelMembers_*.ipa
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -166,6 +170,6 @@ jobs:
         shell: bash
         run: |
           echo "### IPA ready for ESign" >> "$GITHUB_STEP_SUMMARY"
-          echo "Base: mrdrvt99 YouTubePlus 21.42.4 YTLite 6.0b2 (existing tweaks preserved)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Base: YouTubePlus 21.47.6 / YTLite 6.0 (existing tweaks preserved)." >> "$GITHUB_STEP_SUMMARY"
           echo "Added only HideChannelMembers ${HCM_VERSION} .deb." >> "$GITHUB_STEP_SUMMARY"
           echo "Download the workflow artifact, unzip it, and sign/install the IPA with ESign." >> "$GITHUB_STEP_SUMMARY"
