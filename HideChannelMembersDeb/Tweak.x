@@ -1,4 +1,4 @@
-// HideChannelMembers 0.10.0 (members, live chat, search suggestions)
+// HideChannelMembers 0.11.0 (members, live chat, search suggestions)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -331,11 +331,85 @@ static void HCMRestoreCardViews(UIView *view, NSUInteger depth) {
 %end
 
 
-// Hide zero-query recommendations, search history and autocomplete.
-// Based on YTLite's noSearchHistory hooks; preserve submitted search results.
+// Hide suggestions on the search-entry controller, including the separate
+// zero-prefix/trending refresh path. Never touch submitted search results.
+static BOOL HCMIsSuggestionCollection(id controller, UIView *view) {
+    if (![view isKindOfClass:[UICollectionView class]] &&
+        ![view isKindOfClass:[UITableView class]]) return NO;
+    // Prefer the actual suggestion-list ivar. It was _suggestionsView in
+    // earlier YouTube versions; guard all runtime lookups.
+    for (NSString *key in @[@"_suggestionsView", @"_suggestionsCollectionView",
+                             @"_suggestionsTableView", @"_searchSuggestionsView",
+                             @"_zeroStateSuggestionsView"]) {
+        Ivar ivar = class_getInstanceVariable([controller class], key.UTF8String);
+        if (ivar && ivar_getTypeEncoding(ivar)[0] == '@' &&
+            object_getIvar(controller, ivar) == view) return YES;
+    }
+    NSString *name = [NSStringFromClass(view.class) lowercaseString];
+    if ([name containsString:@"suggestion"] || [name containsString:@"zerostate"] ||
+        [name containsString:@"zeroprefix"]) return YES;
+    // The native YTSearchViewController is the data source of its suggestion
+    // collection. Submitted results have their own controller/data source.
+    id dataSource = nil;
+    if ([view isKindOfClass:[UICollectionView class]])
+        dataSource = [(UICollectionView *)view dataSource];
+    else
+        dataSource = [(UITableView *)view dataSource];
+    return dataSource == controller;
+}
+static void HCMHideSearchLists(id controller, UIView *root, NSUInteger depth) {
+    if (!root || depth > 18) return;
+    for (UIView *child in root.subviews) {
+        if (HCMIsSuggestionCollection(controller, child)) {
+            child.hidden = YES;
+            continue;
+        }
+        // Avoid walking into a separate embedded result controller.
+        UIResponder *owner = child.nextResponder;
+        if ([owner isKindOfClass:[UIViewController class]] && owner != controller)
+            continue;
+        HCMHideSearchLists(controller, child, depth + 1);
+    }
+}
+static void HCMApplySearchEntry(id controller) {
+    if (![NSThread isMainThread] ||
+        ![controller isKindOfClass:[UIViewController class]]) return;
+    UIViewController *vc = (UIViewController *)controller;
+    if (!vc.isViewLoaded) return;
+    HCMHideSearchLists(controller, vc.view, 0);
+}
 %hook YTSearchViewController
 - (void)setSuggestions:(id)suggestions {
-    // Suppress suggestion payload, independent of interface language.
+    // Pass an empty array to clear earlier cached content, rather than
+    // leaving the existing list untouched by dropping the call.
+    %orig(@[]);
+    HCMApplySearchEntry(self);
+}
+- (void)updateWithSuggestions:(id)suggestions shouldFillRefinements:(BOOL)fill {
+    %orig(@[], NO);
+    HCMApplySearchEntry(self);
+}
+- (void)zeroStateSuggestionsDidRefresh {
+    %orig;
+    HCMApplySearchEntry(self);
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    HCMApplySearchEntry(self);
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    HCMApplySearchEntry(self);
+}
+%end
+
+// Additional rendering fallback for the dedicated suggestion cell, including
+// cached/late updates that bypass the usual suggestion setter.
+%hook YTSearchSuggestionCollectionViewCell
+- (void)layoutSubviews {
+    %orig;
+    UIView *view = (UIView *)self;
+    view.hidden = YES;
 }
 %end
 
