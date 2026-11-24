@@ -1,4 +1,4 @@
-// HideChannelMembers 0.9.0 (preserve members filters; add live chat and replay renderer filters)
+// HideChannelMembers 0.10.0 (members, live chat, search suggestions)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -327,5 +327,20 @@ static void HCMRestoreCardViews(UIView *view, NSUInteger depth) {
 - (void)prepareForReuse {
     %orig;
     HCMRestoreCardViews(((UICollectionViewCell *)self).contentView,0);
+}
+%end
+
+
+// Hide zero-query recommendations, search history and autocomplete.
+// Based on YTLite's noSearchHistory hooks; preserve submitted search results.
+%hook YTSearchViewController
+- (void)setSuggestions:(id)suggestions {
+    // Suppress suggestion payload, independent of interface language.
+}
+%end
+
+%hook YTPersonalizedSuggestionsCacheProvider
+- (id)activeCache {
+    return nil;
 }
 %end
