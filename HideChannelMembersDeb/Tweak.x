@@ -1,4 +1,4 @@
-// HideChannelMembers 0.8.0 (language-independent recognition card structure)
+// HideChannelMembers 0.9.0 (preserve members filters; add live chat and replay renderer filters)
 // Target identified by MemberShelfInspector on YouTube iOS 21.42.4:
 // YTISectionListRenderer -> YTISectionListSupportedRenderers ->
 // YTIItemSectionRenderer -> YTIItemSectionSupportedRenderers ->
@@ -57,9 +57,56 @@ static BOOL HCMIsDescriptionMembersCardText(NSString *text) {
     return NO;
 }
 
+
+// Live chat detection is deliberately independent of the UI language.
+// Only exact renderer/ELM identifiers are matched; do not match arbitrary
+// "live", "chat", comment, channel, or video title strings.
+static BOOL HCMIsLiveChatRenderer(id renderer) {
+    if (!renderer) return NO;
+    @try {
+        NSString *className = NSStringFromClass([renderer class]);
+        for (NSString *name in @[@"YTILiveChatRenderer",
+                                 @"YTILiveChatReplayRenderer",
+                                 @"YTILiveChatPreviewRenderer",
+                                 @"YTILiveChatEntryPointRenderer",
+                                 @"YTILiveChatEntryPointViewModel"]) {
+            if ([className isEqualToString:name]) return YES;
+        }
+        for (NSString *field in @[@"liveChatRenderer", @"liveChatReplayRenderer",
+                                  @"liveChatPreviewRenderer", @"liveChatEntryPointRenderer",
+                                  @"liveChatEntryPointViewModel"]) {
+            SEL selector = NSSelectorFromString(field);
+            NSMethodSignature *sig = [renderer methodSignatureForSelector:selector];
+            if (!sig || sig.methodReturnType[0] != '@') continue;
+            NSString *has = [@"has" stringByAppendingString:
+                [[[field substringToIndex:1] uppercaseString]
+                 stringByAppendingString:[field substringFromIndex:1]]];
+            SEL hs = NSSelectorFromString(has);
+            NSMethodSignature *hsig = [renderer methodSignatureForSelector:hs];
+            if (hsig && (hsig.methodReturnType[0]=='B' || hsig.methodReturnType[0]=='c')) {
+                if (((BOOL (*)(id,SEL))objc_msgSend)(renderer, hs)) return YES;
+            } else if (HCMCall(renderer, field)) return YES;
+        }
+        if (![className isEqualToString:@"YTIElementRenderer"]) return NO;
+        NSString *description = [renderer description];
+        if (![description isKindOfClass:[NSString class]]) return NO;
+        for (NSString *token in @[@"live_chat_entry_point", @"live_chat_entrypoint",
+                                   @"live_chat_preview", @"live_chat_replay",
+                                   @"live_chat_shelf", @"live_chat_panel",
+                                   @"liveChatEntryPointRenderer", @"liveChatPreviewRenderer",
+                                   @"liveChatEntryPointViewModel"]) {
+            if ([description rangeOfString:token options:NSCaseInsensitiveSearch].location != NSNotFound)
+                return YES;
+        }
+    } @catch (NSException *exception) {}
+    return NO;
+}
+
 static BOOL HCMIsMemberItem(id item) {
+    if (HCMIsLiveChatRenderer(item)) return YES;
     id element = HCMCall(item, @"elementRenderer");
     if (!element) return NO;
+    if (HCMIsLiveChatRenderer(element)) return YES;
     @try {
         NSString *description = [element description];
         if (![description isKindOfClass:[NSString class]]) return NO;
@@ -120,6 +167,10 @@ static void HCMPruneModel(id model) {
     NSMutableIndexSet *emptySections = [NSMutableIndexSet indexSet];
 
     [sections enumerateObjectsUsingBlock:^(id wrapper, NSUInteger index, BOOL *stop) {
+        if (HCMIsLiveChatRenderer(wrapper)) {
+            [emptySections addIndex:index];
+            return;
+        }
         id itemSection = HCMCall(wrapper, @"itemSectionRenderer");
         if (itemSection && (HCMPruneItemSection(itemSection) ||
                             HCMIsDirectDescriptionMembersSection(itemSection))) {
@@ -140,6 +191,7 @@ static NSArray *HCMFilteredSections(NSArray *sections) {
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:sections.count];
     for (id section in sections) {
         // The inspector confirmed addSectionsFromArray: receives YTIItemSectionRenderer.
+        if (HCMIsLiveChatRenderer(section)) continue;
         if (HCMPruneItemSection(section)) continue;
         if (HCMIsDirectDescriptionMembersSection(section)) {
             NSLog(@"[HideChannelMembers] dropped video-description member card");
